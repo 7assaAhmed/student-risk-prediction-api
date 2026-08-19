@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>اختبار نظام التنبؤ بالمخاطر الأكاديمية</title>
+<style>
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; background: #f5f5f5; }
+  h1 { font-size: 22px; color: #222; }
+  .card { background: white; border-radius: 10px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  label { display: block; margin-top: 12px; font-size: 14px; color: #444; }
+  input { width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+  button { margin-top: 20px; padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  #apiUrl { margin-bottom: 20px; }
+  .result-box { border-radius: 8px; padding: 16px; margin-top: 12px; }
+  .risk-high { background: #fef2f2; border: 1px solid #fca5a5; }
+  .risk-medium { background: #fffbeb; border: 1px solid #fcd34d; }
+  .risk-low { background: #f0fdf4; border: 1px solid #86efac; }
+  .risk-label { font-weight: bold; font-size: 16px; }
+  .risk-prob { font-size: 28px; font-weight: bold; margin: 4px 0; }
+  .risk-note { font-size: 13px; color: #666; }
+  .error { background: #fef2f2; border: 1px solid #fca5a5; padding: 12px; border-radius: 6px; color: #991b1b; }
+  #loading { display: none; color: #666; }
+  .explanation { margin-top: 12px; padding-top: 10px; border-top: 1px dashed #ccc; }
+  .exp-title { font-size: 13px; font-weight: bold; color: #555; margin-bottom: 6px; }
+  .exp-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; color: #333; }
+  .exp-value { color: #777; font-size: 12px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn { flex: 1; padding: 12px; background: white; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 15px; color: #444; }
+  .tab-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .chat-box { height: 350px; overflow-y: auto; background: #fafafa; border: 1px solid #eee; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .msg { margin-bottom: 10px; padding: 10px 14px; border-radius: 10px; max-width: 85%; line-height: 1.6; font-size: 14px; }
+  .msg-user { background: #2563eb; color: white; margin-right: auto; margin-left: 0; border-bottom-left-radius: 2px; }
+  .msg-bot { background: white; border: 1px solid #eee; margin-left: auto; margin-right: 0; border-bottom-right-radius: 2px; }
+  .chat-input-row { display: flex; gap: 8px; }
+  .chat-input-row input { flex: 1; margin-top: 0; }
+  .chat-input-row button { margin-top: 0; white-space: nowrap; }
+  .context-note { font-size: 12px; color: #888; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<h1>🎓 منصة التحليل الأكاديمي الذكي</h1>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="showTab('predict')">📊 التنبؤ بالمخاطر</button>
+  <button class="tab-btn" onclick="showTab('chat')">💬 المستشار الذكي</button>
+</div>
+
+<div id="predictTab" class="tab-content active">
+  <label>كود الطالب</label>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="studentId" value="220072" style="flex:1;">
+    <button onclick="lookupStudent()" style="white-space:nowrap;">🔍 هات بياناته</button>
+  </div>
+  <p id="lookupStatus" style="font-size:13px; color:#666; margin-top:6px;"></p>
+</div>
+
+<div class="card" id="dataCard">
+  <p style="font-size:13px; color:#888;">دوسي "هات بياناته" فوق، أو عبّي الحقول يدوي لو حابة تجربي أرقام مختلفة.</p>
+
+  <label>GPA الفصل الأول (سنة 1)</label>
+  <input type="number" step="0.01" id="fallGpa" value="2.34">
+
+  <label>GPA الفصل الثاني (سنة 1)</label>
+  <input type="number" step="0.01" id="springGpa" value="2.77">
+
+  <label>عدد المقررات الكلي</label>
+  <input type="number" id="totalCourses" value="13">
+
+  <label>عدد المقررات الناجحة</label>
+  <input type="number" id="passedCourses" value="13">
+
+  <label>عدد المقررات الراسبة</label>
+  <input type="number" id="failedCourses" value="0">
+
+  <label>الساعات المعتمدة</label>
+  <input type="number" step="0.01" id="credits" value="35">
+
+  <label>مجموع النقاط</label>
+  <input type="number" step="0.01" id="points" value="89.5">
+
+  <label>متوسط الدرجات</label>
+  <input type="number" step="0.001" id="avgGrade" value="2.585">
+
+  <label>أعلى درجة</label>
+  <input type="number" step="0.01" id="maxGrade" value="4.0">
+
+  <label>أقل درجة</label>
+  <input type="number" step="0.01" id="minGrade" value="1.0">
+
+  <div id="year2Section" style="display:none; margin-top:16px; padding-top:12px; border-top:1px solid #eee;">
+    <p style="font-size:13px; color:#888; margin-bottom:8px;">📅 بيانات سنة 2 (موجودة لهذا الطالب)</p>
+    <label>GPA الفصل الأول (سنة 2)</label>
+    <input type="number" step="0.01" id="fallGpa2">
+    <label>GPA الفصل الثاني (سنة 2)</label>
+    <input type="number" step="0.01" id="springGpa2">
+    <label>عدد المقررات الكلي</label>
+    <input type="number" id="totalCourses2">
+    <label>عدد المقررات الناجحة</label>
+    <input type="number" id="passedCourses2">
+    <label>عدد المقررات الراسبة</label>
+    <input type="number" id="failedCourses2">
+    <label>الساعات المعتمدة</label>
+    <input type="number" step="0.01" id="credits2">
+    <label>مجموع النقاط</label>
+    <input type="number" step="0.01" id="points2">
+    <label>متوسط الدرجات</label>
+    <input type="number" step="0.001" id="avgGrade2">
+    <label>أعلى درجة</label>
+    <input type="number" step="0.01" id="maxGrade2">
+    <label>أقل درجة</label>
+    <input type="number" step="0.01" id="minGrade2">
+  </div>
+
+  <div id="year3Section" style="display:none; margin-top:16px; padding-top:12px; border-top:1px solid #eee;">
+    <p style="font-size:13px; color:#888; margin-bottom:8px;">📅 بيانات سنة 3 (موجودة لهذا الطالب)</p>
+    <label>GPA الفصل الأول (سنة 3)</label>
+    <input type="number" step="0.01" id="fallGpa3">
+    <label>GPA الفصل الثاني (سنة 3)</label>
+    <input type="number" step="0.01" id="springGpa3">
+    <label>عدد المقررات الكلي</label>
+    <input type="number" id="totalCourses3">
+    <label>عدد المقررات الناجحة</label>
+    <input type="number" id="passedCourses3">
+    <label>عدد المقررات الراسبة</label>
+    <input type="number" id="failedCourses3">
+    <label>الساعات المعتمدة</label>
+    <input type="number" step="0.01" id="credits3">
+    <label>مجموع النقاط</label>
+    <input type="number" step="0.01" id="points3">
+    <label>متوسط الدرجات</label>
+    <input type="number" step="0.001" id="avgGrade3">
+    <label>أعلى درجة</label>
+    <input type="number" step="0.01" id="maxGrade3">
+    <label>أقل درجة</label>
+    <input type="number" step="0.01" id="minGrade3">
+  </div>
+
+  <button onclick="predict()">شغّل التنبؤ</button>
+  <p id="loading">⏳ جاري الاتصال بالسيرفر...</p>
+</div>
+
+<div id="results"></div>
+
+</div>
+
+<div id="chatTab" class="tab-content">
+  <div class="card">
+    <label>كود الطالب (اختياري — لو موجود، النصايح هتبقى مخصصة له)</label>
+    <input type="text" id="chatStudentId" placeholder="مثال: 220072">
+
+    <label>GPA الحالي</label>
+    <input type="number" step="0.01" id="chatGpa" placeholder="مثال: 2.8">
+
+    <p class="context-note" id="chatContextNote">هيتحط تلقائياً كسياق في أول رسالة بس، مش محتاجة تكتبيه كل مرة.</p>
+  </div>
+
+  <div class="card">
+    <div class="chat-box" id="chatBox">
+      <div class="msg msg-bot">أهلاً! أنا مستشارك الأكاديمي. اسأليني عن أي مادة أو خطة دراسية، أو اسأليني إزاي تحسّني أدائك.</div>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="chatInput" placeholder="اكتبي سؤالك هنا..." onkeypress="if(event.key==='Enter') sendChat()">
+      <button onclick="sendChat()">إرسال</button>
+    </div>
+    <p id="chatStatus" style="font-size:12px; color:#888; margin-top:6px;"></p>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.getElementById('predictTab').classList.toggle('active', name === 'predict');
+  document.getElementById('chatTab').classList.toggle('active', name === 'chat');
+  document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', (name === 'predict' && i === 0) || (name === 'chat' && i === 1));
+  });
+}
+
+const CHAT_URL = 'http://localhost:5000/chat';
+let chatHistory = [];
+
+function simpleMarkdownToHtml(text) {
+  // Escape HTML first so the model's text can never inject real tags.
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Headers (### / ## / #)
+  html = html.replace(/^### (.+)$/gm, '<h4 style="margin:10px 0 4px;font-size:15px;">$1</h4>');
+  html = html.replace(/^## (.+)$/gm, '<h3 style="margin:12px 0 6px;font-size:16px;">$1</h3>');
+  html = html.replace(/^# (.+)$/gm, '<h2 style="margin:14px 0 6px;font-size:17px;">$1</h2>');
+
+  // Bold / italic
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // Bullet lists: group consecutive "- item" or "* item" lines into one <ul>
+  html = html.replace(/(?:^|\n)([-*] .+(?:\n[-*] .+)*)/g, (block) => {
+    const items = block.trim().split('\n').map(line =>
+      '<li>' + line.replace(/^[-*]\s+/, '') + '</li>'
+    ).join('');
+    return '\n<ul style="margin:6px 0;padding-inline-start:20px;">' + items + '</ul>';
+  });
+
+  // Numbered lists: "1. item"
+  html = html.replace(/(?:^|\n)(\d+\. .+(?:\n\d+\. .+)*)/g, (block) => {
+    const items = block.trim().split('\n').map(line =>
+      '<li>' + line.replace(/^\d+\.\s+/, '') + '</li>'
+    ).join('');
+    return '\n<ol style="margin:6px 0;padding-inline-start:20px;">' + items + '</ol>';
+  });
+
+  // Remaining newlines -> line breaks (but not inside the lists/headers just built)
+  html = html.replace(/\n(?!<)/g, '<br>');
+
+  return html;
+}
+
+function appendMsg(text, isUser) {
+  const box = document.getElementById('chatBox');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (isUser ? 'msg-user' : 'msg-bot');
+  if (isUser) {
+    div.textContent = text;  // user input is never markdown - safe as plain text
+  } else {
+    div.innerHTML = simpleMarkdownToHtml(text);
+  }
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const message = input.value.trim();
+  if (!message) return;
+
+  const studentId = document.getElementById('chatStudentId').value.trim();
+  const gpaVal = document.getElementById('chatGpa').value;
+  const status = document.getElementById('chatStatus');
+
+  appendMsg(message, true);
+  input.value = '';
+  status.textContent = '⏳ المستشار بيفكر...';
+
+  const payload = { message, history: chatHistory };
+  if (studentId) payload.student_id = studentId;
+  if (gpaVal) payload.gpa = parseFloat(gpaVal);
+
+  try {
+    const res = await fetch(CHAT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    appendMsg(data.reply, false);
+
+    chatHistory.push({ role: 'user', content: message });
+    chatHistory.push({ role: 'assistant', content: data.reply });
+
+    status.textContent = data.risk_context_used
+      ? '✅ الرد ده مبني على بيانات الطالب الحقيقية'
+      : (studentId ? '⚠️ مفيش بيانات محفوظة لهذا الكود - رد عام' : '');
+  } catch (err) {
+    appendMsg('❌ حصل خطأ: ' + err.message, false);
+    status.textContent = '';
+  }
+}
+
+function riskClass(prob) {
+  if (prob >= 0.6) return 'risk-high';
+  if (prob >= 0.3) return 'risk-medium';
+  return 'risk-low';
+}
+
+function riskEmoji(prob) {
+  if (prob >= 0.6) return '🔴';
+  if (prob >= 0.3) return '🟡';
+  return '🟢';
+}
+
+const API_URL = 'http://localhost:5000/predict';
+const LOOKUP_URL = 'http://localhost:5000/student';
+
+const FIELD_IDS = {
+  fall_gpa: 'fallGpa', spring_gpa: 'springGpa', total_courses: 'totalCourses',
+  passed_courses: 'passedCourses', failed_courses: 'failedCourses',
+  credits: 'credits', points: 'points', avg_grade: 'avgGrade',
+  max_grade: 'maxGrade', min_grade: 'minGrade',
+};
+
+async function lookupStudent() {
+  const studentId = document.getElementById('studentId').value.trim();
+  const status = document.getElementById('lookupStatus');
+  status.textContent = '⏳ جاري البحث...';
+  document.getElementById('year2Section').style.display = 'none';
+  document.getElementById('year3Section').style.display = 'none';
+
+  try {
+    const res = await fetch(`${LOOKUP_URL}/${encodeURIComponent(studentId)}`);
+    if (res.status === 404) {
+      status.textContent = `❌ مفيش بيانات محفوظة لكود ${studentId} — عبّي الحقول يدوي.`;
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // year1 (always shown)
+    if (data.year1) {
+      for (const [field, id] of Object.entries(FIELD_IDS)) {
+        if (data.year1[field] !== undefined) document.getElementById(id).value = data.year1[field];
+      }
+    }
+    // year2 (shown only if this student has it)
+    if (data.year2) {
+      document.getElementById('year2Section').style.display = 'block';
+      for (const [field, id] of Object.entries(FIELD_IDS)) {
+        if (data.year2[field] !== undefined) document.getElementById(id + '2').value = data.year2[field];
+      }
+    }
+    // year3 (shown only if this student has it)
+    if (data.year3) {
+      document.getElementById('year3Section').style.display = 'block';
+      for (const [field, id] of Object.entries(FIELD_IDS)) {
+        if (data.year3[field] !== undefined) document.getElementById(id + '3').value = data.year3[field];
+      }
+    }
+
+    const years = ['year1', 'year2', 'year3'].filter(y => data[y]);
+    status.textContent = `✅ اتملت بيانات: ${years.join(', ')}`;
+  } catch (err) {
+    status.textContent = `❌ خطأ في الاتصال: ${err.message}`;
+  }
+}
+
+function collectYear(suffix) {
+  const get = id => {
+    const el = document.getElementById(id + suffix);
+    return el && el.value !== '' ? parseFloat(el.value) : undefined;
+  };
+  const year = {
+    fall_gpa: get('fallGpa'), spring_gpa: get('springGpa'),
+    total_courses: get('totalCourses'), passed_courses: get('passedCourses'),
+    failed_courses: get('failedCourses'), credits: get('credits'),
+    points: get('points'), avg_grade: get('avgGrade'),
+    max_grade: get('maxGrade'), min_grade: get('minGrade'),
+  };
+  const hasAny = Object.values(year).some(v => v !== undefined && !isNaN(v));
+  return hasAny ? year : null;
+}
+
+async function predict() {
+  const resultsDiv = document.getElementById('results');
+  const loading = document.getElementById('loading');
+  resultsDiv.innerHTML = '';
+  loading.style.display = 'block';
+
+  const payload = { student_id: document.getElementById('studentId').value };
+  const y1 = collectYear('');
+  const y2 = collectYear('2');
+  const y3 = collectYear('3');
+  if (y1) payload.year1 = y1;
+  if (y2) payload.year2 = y2;
+  if (y3) payload.year3 = y3;
+
+  console.log('Sending request to:', API_URL);
+  console.log('Payload:', payload);
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    console.log('Response status:', res.status);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
+    const data = await res.json();
+    console.log('Response data:', data);
+    loading.style.display = 'none';
+    renderResults(data);
+  } catch (err) {
+    console.error('Fetch error:', err);
+    loading.style.display = 'none';
+    resultsDiv.innerHTML = `<div class="error">
+      ❌ فشل الاتصال بالسيرفر<br>
+      <b>نوع الخطأ:</b> ${err.name}<br>
+      <b>التفاصيل:</b> ${err.message}<br><br>
+      الرابط المستخدم: <code>${API_URL}</code><br>
+      تأكد إن الفلاسك شغّال على البورت 5000 (شوفي نافذة الترمينال بتاعته).
+    </div>`;
+  }
+}
+
+function renderExplanation(explanation) {
+  if (!explanation || explanation.length === 0) return '';
+  let html = '<div class="explanation">';
+  html += '<div class="exp-title">أهم العوامل المؤثرة في القرار:</div>';
+  for (const f of explanation) {
+    const isRisk = f.effect === 'increases_risk' || f.effect === 'pushes_prediction_up';
+    const arrow = isRisk ? '🔺' : '🔻';
+    const effectText = {
+      'increases_risk': 'بيزوّد الخطر',
+      'decreases_risk': 'بيقلّل الخطر',
+      'pushes_prediction_up': 'بيرفع التوقع',
+      'pushes_prediction_down': 'بيقلّل التوقع',
+      'increases_graduation_probability': 'بيزوّد فرصة التخرج',
+      'decreases_graduation_probability': 'بيقلّل فرصة التخرج',
+    }[f.effect] || f.effect;
+    html += `<div class="exp-row">
+      <span>${arrow} ${f.factor}</span>
+      <span class="exp-value">(القيمة: ${f.student_value}) — ${effectText}</span>
+    </div>`;
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderResults(data) {
+  const resultsDiv = document.getElementById('results');
+  const p = data.predictions;
+  let html = `<div class="card"><h2>نتايج الطالب ${data.student_id}</h2>`;
+
+  const warningYear = p.warning_risk && p.warning_risk.target_year;
+  const notPromotedYear = p.not_promoted_risk && p.not_promoted_risk.target_year;
+  const delayedYear = p.delayed_progression_risk && p.delayed_progression_risk.target_year;
+
+  const items = [
+    { key: 'warning_risk', label: `⚠️ خطر الإنذار الأكاديمي في سنة ${warningYear || '؟'}` },
+    { key: 'not_promoted_risk', label: `📉 خطر عدم الترقية لسنة ${notPromotedYear || '3'}` },
+    { key: 'delayed_progression_risk', label: `⏳ خطر التأخر عن سنة ${delayedYear || '4'}` },
+  ];
+
+  for (const item of items) {
+    const field = p[item.key];
+    if (!field || !field.available) {
+      html += `<div class="result-box"><span class="risk-label">${item.label}</span><br><span class="risk-note">غير متاح: ${field ? field.reason : 'لا يوجد'}</span></div>`;
+      continue;
+    }
+    const pct = (field.probability * 100).toFixed(1);
+    html += `<div class="result-box ${riskClass(field.probability)}">
+      <span class="risk-label">${riskEmoji(field.probability)} ${item.label}</span>
+      <div class="risk-prob">${pct}%</div>
+      <div class="risk-note">${field.confidence_note}</div>
+      ${renderExplanation(field.explanation)}
+    </div>`;
+  }
+
+  const gpa = p.predicted_next_year_gpa;
+  if (gpa && gpa.available) {
+    html += `<div class="result-box">
+      <span class="risk-label">📊 توقع GPA السنة القادمة</span>
+      <div class="risk-prob">${gpa.value.toFixed(2)}</div>
+      <div class="risk-note">${gpa.confidence_note}</div>
+      ${renderExplanation(gpa.explanation)}
+    </div>`;
+  }
+
+  const grad = p.graduation_probability;
+  if (grad) {
+    if (!grad.available) {
+      html += `<div class="result-box"><span class="risk-label">🎓 نسبة احتمال التخرج في الموعد</span><br><span class="risk-note">غير متاح: ${grad.reason}</span></div>`;
+    } else {
+      const pct = (grad.probability * 100).toFixed(1);
+      html += `<div class="result-box" style="background:#fff7ed; border:1px solid #fdba74;">
+        <span class="risk-label">🎓 نسبة احتمال التخرج في الموعد ⚠️</span>
+        <div class="risk-prob">${pct}%</div>
+        <div class="risk-note" style="color:#c2410c; font-weight:bold;">${grad.confidence_note}</div>
+        ${renderExplanation(grad.explanation)}
+      </div>`;
+    }
+  }
+
+  const cluster = p.peer_cluster;
+  if (cluster) {
+    if (!cluster.available) {
+      html += `<div class="result-box"><span class="risk-label">👥 مستوى الطالب وسط زمايله</span><br><span class="risk-note">غير متاح: ${cluster.reason}</span></div>`;
+    } else {
+      const clusterColor = cluster.cluster_id === 0 ? 'risk-low' : 'risk-medium';
+      html += `<div class="result-box ${clusterColor}">
+        <span class="risk-label">👥 مستوى الطالب وسط زمايله (المجموعة ${cluster.cluster_label})</span>
+        <div class="risk-note" style="font-size:14px; margin-top:6px;">${cluster.description}</div>
+        <div class="risk-note" style="margin-top:6px;">${cluster.confidence_note}</div>
+      </div>`;
+    }
+  }
+
+  html += '</div>';
+  resultsDiv.innerHTML = html;
+}
+</script>
+
+</body>
+</html>
