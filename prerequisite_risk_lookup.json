@@ -1,0 +1,130 @@
+{
+  "H203": {
+    "prerequisite": "H101",
+    "n_total": 450,
+    "low_prereq_fail_rate": 0.132,
+    "low_prereq_n": 243,
+    "high_prereq_fail_rate": 0.082,
+    "high_prereq_n": 207
+  },
+  "BS102": {
+    "prerequisite": "BS101",
+    "n_total": 466,
+    "low_prereq_fail_rate": 0.01,
+    "low_prereq_n": 395,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 71
+  },
+  "BS103": {
+    "prerequisite": "BS101",
+    "n_total": 459,
+    "low_prereq_fail_rate": 0.07,
+    "low_prereq_n": 388,
+    "high_prereq_fail_rate": 0.014,
+    "high_prereq_n": 71
+  },
+  "BS201": {
+    "prerequisite": "BS101",
+    "n_total": 456,
+    "low_prereq_fail_rate": 0.008,
+    "low_prereq_n": 386,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 70
+  },
+  "BS202": {
+    "prerequisite": "BS101",
+    "n_total": 452,
+    "low_prereq_fail_rate": 0.028,
+    "low_prereq_n": 387,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 65
+  },
+  "BS203": {
+    "prerequisite": "BS101",
+    "n_total": 414,
+    "low_prereq_fail_rate": 0.058,
+    "low_prereq_n": 342,
+    "high_prereq_fail_rate": 0.014,
+    "high_prereq_n": 72
+  },
+  "CS103": {
+    "prerequisite": "CS102",
+    "n_total": 459,
+    "low_prereq_fail_rate": 0.043,
+    "low_prereq_n": 70,
+    "high_prereq_fail_rate": 0.015,
+    "high_prereq_n": 389
+  },
+  "CS104": {
+    "prerequisite": "CS102",
+    "n_total": 459,
+    "low_prereq_fail_rate": 0.1,
+    "low_prereq_n": 70,
+    "high_prereq_fail_rate": 0.051,
+    "high_prereq_n": 389
+  },
+  "CS201": {
+    "prerequisite": "CS103",
+    "n_total": 436,
+    "low_prereq_fail_rate": 0.0,
+    "low_prereq_n": 164,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 272
+  },
+  "CS202": {
+    "prerequisite": "BS104",
+    "n_total": 424,
+    "low_prereq_fail_rate": 0.045,
+    "low_prereq_n": 355,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 69
+  },
+  "CS203": {
+    "prerequisite": "CS201",
+    "n_total": 19,
+    "low_prereq_fail_rate": 0.0,
+    "low_prereq_n": 6,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 13
+  },
+  "CS401": {
+    "prerequisite": "CS203",
+    "n_total": 29,
+    "low_prereq_fail_rate": 0.0,
+    "low_prereq_n": 16,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 13
+  },
+  "CS403": {
+    "prerequisite": "BS103",
+    "n_total": 450,
+    "low_prereq_fail_rate": 0.0,
+    "low_prereq_n": 59,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 391
+  },
+  "CS419": {
+    "prerequisite": "CS403",
+    "n_total": 427,
+    "low_prereq_fail_rate": 0.0,
+    "low_prereq_n": 70,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 357
+  },
+  "IS206": {
+    "prerequisite": "IS105",
+    "n_total": 442,
+    "low_prereq_fail_rate": 0.026,
+    "low_prereq_n": 229,
+    "high_prereq_fail_rate": 0.014,
+    "high_prereq_n": 213
+  },
+  "IS207": {
+    "prerequisite": "CS103",
+    "n_total": 446,
+    "low_prereq_fail_rate": 0.006,
+    "low_prereq_n": 169,
+    "high_prereq_fail_rate": 0.0,
+    "high_prereq_n": 277
+  }
+}
