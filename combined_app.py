@@ -822,14 +822,11 @@ def chat():
 - متوسط → شرح خطوة خطوة مع أمثلة
 - جيد/جيد جدًا → شرح متوسط العمق
 - ممتاز → شرح متقدم، يمكن الدخول في تفاصيل تقنية
-
-قواعد الشكل والطول (مهمة جداً):
-- خليكِ مختصرة - إجابة مركّزة على السؤال بس، مش مقال طويل. لو السؤال بسيط، جاوبي في فقرة أو فقرتين بحد أقصى.
-- متكتبيش أي حاجة إلا لو ليها داعي فعلي للسؤال المطروح - من غير حشو أو مقدمات طويلة.
-- استخدمي تنسيق Markdown بشكل معتدل ومفيد بس (## للعناوين لو محتاجة تقسيم، **بولد** للكلمات المهمة، قوائم - للنقاط) - مش كل رد محتاج عناوين، استخدميها بس لو الإجابة فعلاً فيها أقسام متعددة.
 """
+    system_prompt += f"\n\nمرجع اللائحة والخطة الدراسية (استخدميه بس لو السؤال متعلق بمادة أو لائحة معيّنة):\n{load_knowledge()[:12000]}"
+
     if level:
-        system_prompt += f"\nبيانات الطالب: GPA={gpa}, المستوى={level}"
+        system_prompt += f"\n\nبيانات الطالب: GPA={gpa}, المستوى={level}"
 
     if risk_context:
         system_prompt += f"\n\n{risk_context}\n"
@@ -839,7 +836,23 @@ def chat():
             "مفيدة فعلاً للسؤال المطروح."
         )
 
-    system_prompt += f"\n\nمرجع اللائحة والخطة الدراسية:\n{load_knowledge()[:12000]}"
+    # This goes LAST, right before the actual conversation, specifically
+    # because it needs to be the most recent instruction the model sees.
+    # Confirmed bug (2026-08-21): with the long curriculum reference sitting
+    # immediately before the user's turn, the model would drift into
+    # describing Year-1 subjects or a specific course even when asked a
+    # direct, unrelated question like 'how do I improve my GPA' -
+    # reproduced twice in a row with the same question. Moving the
+    # curriculum block earlier and putting this focused instruction last
+    # keeps the model anchored to what was actually asked.
+    system_prompt += """
+
+قواعد الشكل والطول (مهمة جداً):
+- جاوبي على السؤال المطروح تحديداً - لو الطالب سأل "إزاي أحسّن أدائي؟" جاوبي عن استراتيجيات تحسين الأداء، ومتحوّليش الموضوع لشرح مواد أو الخطة الدراسية إلا لو ده فعلاً اللي اتسأل عنه.
+- خليكِ مختصرة - إجابة مركّزة على السؤال بس، مش مقال طويل. لو السؤال بسيط، جاوبي في فقرة أو فقرتين بحد أقصى.
+- متكتبيش أي حاجة إلا لو ليها داعي فعلي للسؤال المطروح - من غير حشو أو مقدمات طويلة.
+- استخدمي تنسيق Markdown بشكل معتدل ومفيد بس (## للعناوين لو محتاجة تقسيم، **بولد** للكلمات المهمة، قوائم - للنقاط) - مش كل رد محتاج عناوين، استخدميها بس لو الإجابة فعلاً فيها أقسام متعددة.
+"""
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
