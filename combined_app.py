@@ -467,6 +467,14 @@ def readable_feature_name(col):
     the raw column name for anything not in the map (e.g. gpa_trend_*)
     so a new feature never crashes the explanation, just looks less
     polished until translated."""
+    CURR_TERM_NAMES_AR = {
+        "curr_semester_gpa": "معدل الفصل الحالي",
+        "curr_cumulative_gpa": "المعدل التراكمي الحالي",
+        "curr_passed_hours": "عدد الساعات المُجتازة",
+        "curr_total_warnings": "عدد الإنذارات السابقة",
+    }
+    if col in CURR_TERM_NAMES_AR:
+        return CURR_TERM_NAMES_AR[col]
     if col.startswith("gpa_trend_y"):
         # gpa_trend_y1_y2 -> "اتجاه المعدل من سنة 1 إلى سنة 2"
         try:
