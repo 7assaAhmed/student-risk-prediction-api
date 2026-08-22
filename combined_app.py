@@ -585,9 +585,15 @@ def explain_prediction(model_bundle, df, is_regression=False, top_n=4, positive_
             effect = "pushes_prediction_up" if contribution > 0 else "pushes_prediction_down"
         else:
             effect = positive_label if contribution > 0 else negative_label
+        # raw_value can be None when an optional field wasn't provided
+        # by the caller (e.g. /predict-next-term's passed_hours or
+        # total_warnings) - the model still predicts fine via median
+        # imputation, but there's no real original value to display
+        # here, so show null rather than crashing on float(None).
+        student_value = round(float(raw_value), 3) if raw_value is not None else None
         factors.append({
             "factor": readable_feature_name(col),
-            "student_value": round(float(raw_value), 3),
+            "student_value": student_value,
             "effect": effect,
             "impact": round(float(abs(contribution)), 4),
         })
