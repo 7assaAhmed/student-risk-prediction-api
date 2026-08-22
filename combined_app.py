@@ -663,6 +663,13 @@ def build_student_lookup():
                         year_data[field] = float(row[col]) if not isinstance(row[col], str) else row[col]
                 if year_data:
                     record[f"year{year_num}"] = year_data
+            # total_warnings_max is student-level, not per-year - it's
+            # a running total that only ever grows (build notes
+            # 2026-08-22: confirmed real warnings never get removed,
+            # only added to), so it belongs on the record directly,
+            # not nested under any single year.
+            if "total_warnings_max" in row and pd.notna(row["total_warnings_max"]):
+                record["total_warnings_so_far"] = int(row["total_warnings_max"])
             if record:
                 lookup[sid] = record
 
@@ -725,16 +732,20 @@ def load_knowledge():
 
 
 def analyze_gpa(gpa):
-    if gpa >= 3.5:
+    """Official grade bands (confirmed 2026-08-22) - previously used
+    guessed/generic thresholds that didn't match these:
+    <2.0 declining/failing, 2.0-2.3 مقبول, 2.3-2.7 جيد,
+    2.7-3.2 جيد جداً, >=3.2 امتياز."""
+    if gpa >= 3.2:
         return "ممتاز"
-    elif gpa >= 3.0:
+    elif gpa >= 2.7:
         return "جيد جدًا"
-    elif gpa >= 2.5:
+    elif gpa >= 2.3:
         return "جيد"
     elif gpa >= 2.0:
-        return "متوسط"
+        return "مقبول"
     else:
-        return "ضعيف"
+        return "ضعيف (تحت الحد الأدنى)"
 
 
 def build_risk_context_for_advisor(student_id, submitted_years=None):
@@ -902,6 +913,274 @@ def chat():
 
 
 NEXT_TERM_FEATURES = ["curr_semester_gpa", "curr_cumulative_gpa", "curr_passed_hours", "curr_total_warnings"]
+
+
+def build_trajectory_story(student, as_of_year):
+    """'You went from 1.42 in year 1 to 2.42 by year 3 - a real,
+    steady improvement' - built directly from the student's own real
+    year-by-year avg_grade, not generated text. Returns None if fewer
+    than 2 real data points exist (can't tell a trajectory story from
+    one point)."""
+    points = []
+    for y_num in [1, 2, 3]:
+        if as_of_year is not None and y_num > as_of_year:
+            break
+        y_data = student.get(f"year{y_num}")
+        if y_data and y_data.get("avg_grade") is not None:
+            points.append((y_num, y_data["avg_grade"]))
+
+    if len(points) < 2:
+        return None
+
+    first_year, first_gpa = points[0]
+    last_year, last_gpa = points[-1]
+    delta = last_gpa - first_gpa
+
+    if delta > 0.3:
+        direction = f"معدلك تحسّن بشكل حقيقي وملحوظ من {first_gpa:.2f} في سنة {first_year} لـ{last_gpa:.2f} في سنة {last_year}."
+    elif delta > 0.05:
+        direction = f"معدلك في تحسّن تدريجي من {first_gpa:.2f} في سنة {first_year} لـ{last_gpa:.2f} في سنة {last_year}."
+    elif delta < -0.3:
+        direction = f"معدلك تراجع بشكل ملحوظ من {first_gpa:.2f} في سنة {first_year} لـ{last_gpa:.2f} في سنة {last_year}."
+    elif delta < -0.05:
+        direction = f"معدلك في تراجع تدريجي من {first_gpa:.2f} في سنة {first_year} لـ{last_gpa:.2f} في سنة {last_year}."
+    else:
+        direction = f"معدلك شبه ثابت من سنة {first_year} لسنة {last_year} (حوالي {last_gpa:.2f})."
+
+    return direction
+
+
+def build_tiered_warnings(student, student_id, predictions, as_of_year, total_warnings=None):
+    """Four warning tiers, matching what was actually agreed on
+    earlier in this project (build notes 2026-08-22):
+    1) course-specific (real prerequisite-based course risk)
+    2) general academic level (the existing warning_risk model) -
+       explicitly notes the REAL cumulative warning count when known,
+       since warnings never get removed once earned, only added to
+       (confirmed against real semester-level data: a student's
+       total_warnings stayed constant or grew, never dropped, even
+       across semesters where their GPA improved)
+    3) OFFICIAL academic probation - specifically when a predicted
+       GPA crosses below 2.0, which is the real institutional
+       threshold the user confirmed (2.0 = مقبول boundary; below
+       that is the probation/إنذار أكاديمي zone), not an arbitrary
+       cutoff invented here
+    4) engagement/attendance-based - honestly marked unavailable,
+       since it needs real accumulated data from engagement_tracker.py
+       that doesn't exist yet (no fabricated data used to fill this)
+    """
+    tiers = []
+
+    # ---- Tier 1: course-specific ----
+    course_risks = get_student_course_risk_predictions(student_id)
+    risky_courses = [r for r in course_risks if r["historical_fail_rate"] >= 0.15]
+    if risky_courses:
+        for r in sorted(risky_courses, key=lambda x: x["historical_fail_rate"], reverse=True)[:3]:
+            tiers.append({
+                "tier": "مقرر محدد",
+                "severity": "عالي" if r["historical_fail_rate"] >= 0.4 else "متوسط",
+                "message": f"خلي بالك من مادة {r['course_code']} - {r['note']}",
+            })
+    else:
+        tiers.append({"tier": "مقرر محدد", "severity": "لا يوجد", "message": "مفيش مقرر معيّن ظاهر عليه خطر واضح دلوقتي."})
+
+    # ---- Tier 2: general academic level ----
+    warning_risk = predictions.get("warning_risk", {})
+    if warning_risk.get("available"):
+        prob = warning_risk["probability"]
+        warnings_note = ""
+        if total_warnings is not None:
+            if total_warnings > 0:
+                warnings_note = f" عندك دلوقتي {total_warnings} إنذار مسجّل على سجلك من فترة سابقة - ده رقم دائم، مش بيتشال حتى لو معدلك يتحسّن، وأي إنذار جديد بيتضاف عليه."
+            else:
+                warnings_note = " مفيش إنذارات مسجّلة على سجلك لحد دلوقتي."
+        if prob >= 0.5:
+            tiers.append({
+                "tier": "المستوى الدراسي العام",
+                "severity": "عالي" if prob >= 0.75 else "متوسط",
+                "message": f"مستواك الدراسي العام في خطر - احتمال {prob*100:.0f}% تاخدي إنذار إضافي في سنة {warning_risk.get('target_year','؟')} لو الوضع فضل زي ما هو.{warnings_note}",
+            })
+        else:
+            tiers.append({"tier": "المستوى الدراسي العام", "severity": "لا يوجد", "message": f"مستواك العام مستقر - احتمال الإنذار {prob*100:.0f}% بس.{warnings_note}"})
+
+    # ---- Tier 3: OFFICIAL academic probation (GPA < 2.0) ----
+    gpa_pred = predictions.get("predicted_next_year_gpa", {})
+    if gpa_pred.get("available"):
+        val = gpa_pred["value"]
+        if val < 2.0:
+            tiers.append({
+                "tier": "إنذار أكاديمي رسمي",
+                "severity": "حرج",
+                "message": f"⚠️ توقع معدلك في سنة {gpa_pred.get('target_year','؟')} هو {val:.2f} - تحت حد الإنذار الأكاديمي الرسمي (2.0). ده أخطر تصنيف في النظام.",
+            })
+        else:
+            tiers.append({"tier": "إنذار أكاديمي رسمي", "severity": "لا يوجد", "message": f"توقع معدلك ({val:.2f}) فوق حد الإنذار الأكاديمي (2.0)."})
+
+    # ---- Tier 4: engagement-based (honestly unavailable) ----
+    tiers.append({
+        "tier": "الانضباط والحضور",
+        "severity": "غير متاح بعد",
+        "message": "محتاج بيانات حضور وكويزات حقيقية متراكمة (engagement_tracker.py) - مش موجودة كفاية لسه، مش هنخترع رقم ليها.",
+    })
+
+    return tiers
+
+
+def build_recommendations(student, student_id, predictions, level, as_of_year):
+    """Specific, numbered, actionable recommendations - matching the
+    'AI Recommendations' section from the shared Figma design, but
+    built entirely from real signals already computed elsewhere
+    (SHAP factors, per-course prerequisite risk, trajectory), not a
+    generic template and not an AI call. Each recommendation traces
+    back to a specific real number, so none of them are generic
+    filler like 'study harder'."""
+    recs = []
+
+    warning = predictions.get("warning_risk", {})
+    if warning.get("available") and warning.get("probability", 0) >= 0.5:
+        top = warning["explanation"][0] if warning.get("explanation") else None
+        if top:
+            recs.append(f"راجعي مع المرشد الأكاديمي بخصوص {top['factor']} - ده أكبر عامل مؤثر في خطرك الحالي.")
+
+    trajectory = build_trajectory_story(student, as_of_year)
+    if trajectory and ("تحسّن" in trajectory):
+        recs.append("استمري بنفس نمط المذاكرة اللي بيحسّن معدلك - الاتجاه الحالي إيجابي وحقيقي.")
+    elif trajectory and ("تراجع" in trajectory):
+        recs.append("راجعي إيه اللي اتغيّر في نمط مذاكرتك مؤخراً - معدلك في تراجع حقيقي محتاج وقفة.")
+
+    # مخاطر مقررات محددة (لو متاحة) - نفس منطق /student/<id>/courses
+    course_risks = get_student_course_risk_predictions(student_id)
+    if course_risks:
+        top_course = sorted(course_risks, key=lambda r: r["historical_fail_rate"], reverse=True)[0]
+        if top_course["historical_fail_rate"] >= 0.15:
+            recs.append(f"ركّزي مذاكرة إضافية استعداداً لمادة {top_course['course_code']} - طلاب سابقين بنفس درجتك في {top_course['prerequisite_course']} رسبوا فيها بنسبة {top_course['historical_fail_rate']*100:.0f}%.")
+
+    not_promoted = predictions.get("not_promoted_risk", {})
+    if not_promoted.get("available") and not_promoted.get("probability", 0) >= 0.3:
+        recs.append(f"خطر عدم الترقية للسنة القادمة حالياً {not_promoted['probability']*100:.0f}% - راجعي متطلبات الترقية مع شؤون الطلاب بدري.")
+
+    if level in ("جيد جدًا", "امتياز") and not recs:
+        recs.append("أداءك مستقر وقوي - حافظي على نفس المستوى، ومفيش تدخّل عاجل مطلوب دلوقتي.")
+
+    return recs[:5]
+
+
+def build_explanation_text(student, as_of_year, predictions, level):
+    """Combines the real trajectory story with the single most
+    impactful REAL factor from the warning-risk explanation (already
+    computed by SHAP - not invented here) into 2-3 plain sentences.
+    Deterministic and built entirely from real numbers already in
+    `predictions` - no AI call, so it can never drift off-topic or
+    hallucinate a reason that isn't actually in the data."""
+    parts = []
+
+    trajectory = build_trajectory_story(student, as_of_year)
+    if trajectory:
+        parts.append(trajectory)
+
+    warning = predictions.get("warning_risk", {})
+    if warning.get("available") and warning.get("explanation"):
+        top_factor = warning["explanation"][0]
+        direction_word = "بيقلل خطرك" if "decreases" in top_factor["effect"] else "بيزوّد خطرك"
+        parts.append(f"أكتر عامل مؤثر في تقييمك دلوقتي هو {top_factor['factor']} ({top_factor['student_value']}) - {direction_word}.")
+
+    level_messages = {
+        "امتياز": "استمري على نفس المستوى - أداءك ممتاز فعلاً.",
+        "جيد جدًا": "أداءك قوي - ركّزي على الثبات عليه.",
+        "جيد": "أداءك كويس ومتحسّن - في مجال للتقدّم أكتر.",
+        "مقبول": "أداءك في المنطقة الآمنة، بس فيه مساحة حقيقية للتحسين.",
+        "ضعيف (تحت الحد الأدنى)": "الوضع محتاج تدخّل واهتمام فوري - ابدئي بمراجعة أكاديمية بأسرع وقت.",
+    }
+    if level in level_messages:
+        parts.append(level_messages[level])
+
+    return " ".join(parts) if parts else None
+
+
+@app.route("/student/<student_id>/report", methods=["GET"])
+def student_report(student_id):
+    """One-call convenience endpoint for 'my own report' pages: pulls
+    the student's OWN stored data (all years available, not just
+    year1) and runs the full /predict logic on it automatically -
+    the caller doesn't have to fetch-then-resubmit data themselves.
+    Also includes the corrected GPA-level label (مقبول/جيد/جيد
+    جداً/امتياز - build notes 2026-08-22) computed from whichever is
+    the student's most recent available cumulative GPA, since that's
+    what actually determines standing, not an early/stale snapshot.
+
+    Optional query param ?as_of_year=1/2/3 (build notes 2026-08-22):
+    for demo purposes, truncates this REAL student's REAL data to
+    only what they'd have had through that year - simulating how the
+    early-warning system would have looked to a student CURRENTLY
+    progressing through their studies (which is how it'll actually
+    work once real students start using the live app - they start at
+    year1 and predictions update as each real semester completes),
+    rather than always showing the artificial 'full 3-year hindsight'
+    picture our historical/already-graduated dataset naturally gives.
+    Still 100% real data - just showing less of it, on purpose, the
+    same way a real in-progress student's data would be limited."""
+    lookup = get_student_lookup()
+    student = lookup.get(str(student_id).strip())
+    if not student:
+        return jsonify({"error": f"No stored data for student {student_id}."}), 404
+
+    as_of_year = request.args.get("as_of_year", type=int)
+    if as_of_year is not None and as_of_year not in (1, 2, 3):
+        return jsonify({"error": "as_of_year must be 1, 2, or 3"}), 400
+
+    payload = {"student_id": student_id}
+    for y_num in [1, 2, 3]:
+        if as_of_year is not None and y_num > as_of_year:
+            break  # truncate here - this student "hasn't gotten that far yet"
+        y_key = f"year{y_num}"
+        if y_key in student:
+            payload[y_key] = student[y_key]
+
+    with app.test_request_context(json=payload):
+        predict_response = predict()
+    predict_data = predict_response.get_json() if hasattr(predict_response, "get_json") else predict_response[0].get_json()
+
+    # المعدل الأحدث ضمن الحدود اللي سمحنا بيها بس (مش كل بيانات الطالب الحقيقية)
+    latest_year = None
+    latest_gpa = None
+    for y_num in [3, 2, 1]:
+        if as_of_year is not None and y_num > as_of_year:
+            continue
+        y_data = student.get(f"year{y_num}")
+        if y_data and y_data.get("avg_grade") is not None:
+            latest_year = y_num
+            latest_gpa = y_data["avg_grade"]
+            break
+
+    level = analyze_gpa(latest_gpa) if latest_gpa is not None else None
+
+    # total_warnings_so_far is the student's FINAL/whole-career count
+    # (student_ml_dataset.csv only stores the end total, not a
+    # per-year breakdown) - safe to show in the real, full report,
+    # but showing it during an as_of_year simulation would leak
+    # warnings the student "hasn't gotten yet" at that simulated
+    # point into an earlier-stage view. Only surfaced when NOT
+    # simulating an earlier year.
+    total_warnings = student.get("total_warnings_so_far") if as_of_year is None else None
+
+    explanation_text = build_explanation_text(student, as_of_year, predict_data.get("predictions", {}), level)
+    recommendations = build_recommendations(student, student_id, predict_data.get("predictions", {}), level, as_of_year)
+    tiered_warnings = build_tiered_warnings(student, student_id, predict_data.get("predictions", {}), as_of_year, total_warnings)
+
+    return jsonify({
+        "student_id": student_id,
+        "simulated_as_of_year": as_of_year,
+        "years_on_record": list(payload.keys() - {"student_id"}),
+        "latest_cumulative_gpa": latest_gpa,
+        "latest_gpa_from_year": latest_year,
+        "level": level,
+        "total_warnings_so_far": total_warnings,
+        "explanation_text": explanation_text,
+        "recommendations": recommendations,
+        "tiered_warnings": tiered_warnings,
+        "predictions": predict_data.get("predictions"),
+        "note": "level is based on the most recent year on record (or the simulated cutoff if as_of_year was set), not an early/stale snapshot. total_warnings_so_far is only shown in the full (non-simulated) report to avoid leaking future warning counts into an earlier-stage simulation.",
+    })
 
 
 @app.route("/predict-next-term", methods=["POST"])
